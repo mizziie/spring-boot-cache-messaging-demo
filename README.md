@@ -1,6 +1,24 @@
 # Spring Boot Cache & Messaging Demo
 
-โปรเจคนี้เป็น REST API สำหรับจัดการสินค้า (Product) โดยใช้ **Spring Boot 3.4.5** ร่วมกับ **Redis** บน Docker เป็น Cache Layer เพื่อลดเวลาการตอบสนองของ API ที่ถูกเรียกซ้ำ
+[![Java](https://img.shields.io/badge/Java-21-blue?logo=openjdk)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.5-brightgreen?logo=spring)](https://spring.io/projects/spring-boot)
+[![Maven](https://img.shields.io/badge/Maven-3.9-orange?logo=apache-maven)](https://maven.apache.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-red?logo=redis)](https://redis.io/)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-orange?logo=rabbitmq)](https://www.rabbitmq.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
+
+โปรเจคนี้เป็น REST API สำหรับจัดการสินค้า (Product) โดยใช้ **Spring Boot 3.4.5** ร่วมกับ **PostgreSQL** เป็น database หลัก **Redis** เป็น Cache Layer เพื่อลดเวลาการตอบสนองของ API ที่ถูกเรียกซ้ำ และ **RabbitMQ** สำหรับส่ง async events
+
+## Architecture
+
+```mermaid
+graph TD
+    Client[Client / Browser] -->|HTTP / REST| App[Spring Boot App]
+    App -->|Read/Write Cache| Redis[(Redis)]
+    App -->|Publish/Consume Events| RabbitMQ[(RabbitMQ)]
+    App -->|Persist Data| DB[(PostgreSQL)]
+```
 
 ---
 
@@ -9,7 +27,7 @@
 ### 1.1 รันทั้งหมดด้วย Docker Compose (แนะนำ)
 
 ```bash
-# Build + start Spring Boot + Redis + RabbitMQ
+# Build + start Spring Boot + PostgreSQL + Redis + RabbitMQ
 docker-compose up --build -d
 
 # ดู log
@@ -21,13 +39,16 @@ docker-compose down
 
 เข้าใช้งานได้ที่:
 - API: http://localhost:8080/api/products
+- Swagger UI: http://localhost:8080/swagger-ui.html
 - RabbitMQ Management UI: http://localhost:15672 (guest/guest)
 - Redis: localhost:6379
+- PostgreSQL: localhost:5432 (products / postgres / postgres)
 
-### 1.2 รันผ่าน Maven (ต้องมี Redis เอง)
+### 1.2 รันผ่าน Maven (ต้องมี PostgreSQL + Redis เอง)
 
 ```bash
-# เปิด Redis ก่อน (ถ้ายังไม่มี)
+# เปิด PostgreSQL + Redis ก่อน
+docker run -d --name postgres -e POSTGRES_DB=products -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
 docker run -d --name redis -p 6379:6379 redis:7-alpine
 
 # Run app
@@ -40,7 +61,29 @@ mvn spring-boot:run
 mvn test
 ```
 
-### 1.4 ทดสอบ API
+### 1.4 ทดสอบผ่าน Swagger UI
+
+หลัง app start เปิดที่:
+
+```
+http://localhost:8080/swagger-ui.html
+```
+
+หรือดู OpenAPI spec:
+
+```
+http://localhost:8080/v3/api-docs
+```
+
+### 1.5 ทดสอบผ่าน Postman
+
+Import ไฟล์นี้เข้า Postman:
+
+```
+.postman/spring-boot-cache-messaging-demo.postman_collection.json
+```
+
+### 1.6 ทดสอบ API ด้วย curl
 
 ```bash
 # ดูสินค้าทั้งหมด
@@ -74,9 +117,10 @@ curl -X DELETE http://localhost:8080/api/products/1
 ## 2. ภาพรวมระบบ
 
 - **Spring Boot** ทำหน้าที่เป็น backend framework และ REST API server
-- **Redis** ทำหน้าที่เป็น **cache store** ไม่ใช่ database หลัก
-- ข้อมูลสินค้าจริงๆ เก็บใน **in-memory `ConcurrentHashMap`** ภายใน `ProductService`
-- เมื่อ API ถูกเรียกซ้ำ ข้อมูลจะถูกอ่านจาก Redis แทนการประมวลผลใหม่ทั้งหมด
+- **PostgreSQL** ทำหน้าที่เป็น **database หลัก** เก็บข้อมูลสินค้าจริง
+- **Redis** ทำหน้าที่เป็น **cache store** เพื่อลดเวลาการตอบสนองของ API ที่ถูกเรียกซ้ำ
+- **RabbitMQ** ทำหน้าที่เป็น **message broker** ส่ง async events เมื่อสินค้าถูกสร้าง/อัปเดต/ลบ
+- ข้อมูล cache จะถูก invalidate เมื่อมีการเปลี่ยนแปลงข้อมูลสินค้า
 
 ---
 
@@ -85,8 +129,12 @@ curl -X DELETE http://localhost:8080/api/products/1
 | เทคโนโลยี | หน้าที่ |
 |-----------|---------|
 | Spring Boot 3.4.5 | Backend framework + REST API |
+| Spring Data JPA | เชื่อมต่อ PostgreSQL |
+| PostgreSQL 16 | Database หลัก |
 | Spring Data Redis | เชื่อมต่อ Redis |
 | Spring Cache | ทำ caching ด้วย annotation |
+| RabbitMQ 3 | Async messaging |
+| SpringDoc OpenAPI | API documentation / Swagger UI |
 | Redis 7 (Docker) | Cache server |
 | Maven | Build tool |
 | Java 21 | Runtime |
@@ -100,10 +148,13 @@ curl -X DELETE http://localhost:8080/api/products/1
 | `RedisDemoApplication.java` | จุดเริ่มต้นแอพ + เปิดใช้ `@EnableCaching` |
 | `config/CacheConfig.java` | ตั้งค่า `CacheManager` ให้ใช้ Redis แทน in-memory cache |
 | `controller/ProductController.java` | รับ HTTP request จาก client |
-| `service/ProductService.java` | ธุรกิจลอจิก + cache annotations |
-| `model/Product.java` | Model class ของสินค้า |
+| `service/ProductService.java` | ธุรกิจลอจิก + cache annotations + ส่ง events |
+| `repository/ProductRepository.java` | JPA Repository สำหรับ CRUD กับ PostgreSQL |
+| `model/Product.java` | JPA Entity / Model class ของสินค้า |
 | `service/ProductNotFoundException.java` | Exception สำหรับสินค้าที่หาไม่เจอ |
-| `resources/application.properties` | ค่า config เช่น port, Redis host/port |
+| `exception/GlobalExceptionHandler.java` | จัดการ exception ทั้งหมด |
+| `config/RequestIdFilter.java` | เพิ่ม request ID ให้ทุก request |
+| `resources/application.properties` | ค่า config เช่น datasource, Redis, RabbitMQ |
 | `pom.xml` | Dependencies ของ Maven |
 
 ---

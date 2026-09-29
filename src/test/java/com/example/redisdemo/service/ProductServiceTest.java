@@ -3,7 +3,7 @@ package com.example.redisdemo.service;
 import com.example.redisdemo.config.RabbitConfig;
 import com.example.redisdemo.event.ProductEvent;
 import com.example.redisdemo.model.Product;
-import org.junit.jupiter.api.BeforeEach;
+import com.example.redisdemo.repository.ProductRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -14,14 +14,20 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTest {
+
+    @Mock
+    private ProductRepository productRepository;
 
     @Mock
     private RabbitTemplate rabbitTemplate;
@@ -29,27 +35,35 @@ class ProductServiceTest {
     @InjectMocks
     private ProductService productService;
 
-    @BeforeEach
-    void setUp() {
-        // Constructor ของ ProductService seed ข้อมูล 3 ตัวอยู่แล้ว
-    }
-
     @Test
-    void shouldReturnSeededProducts() {
-        List<Product> products = productService.getAll();
+    void shouldReturnAllProducts() {
+        List<Product> products = List.of(
+                new Product(1L, "Keyboard", new BigDecimal("59.99")),
+                new Product(2L, "Mouse", new BigDecimal("29.99"))
+        );
+        when(productRepository.findAll()).thenReturn(products);
 
-        assertThat(products).hasSize(3);
+        List<Product> result = productService.getAll();
+
+        assertThat(result).hasSize(2);
+        verify(productRepository).findAll();
     }
 
     @Test
     void shouldReturnProductById() {
-        Product product = productService.getById(1L);
+        Product product = new Product(1L, "Keyboard", new BigDecimal("59.99"));
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
 
-        assertThat(product.getName()).isEqualTo("Keyboard");
+        Product result = productService.getById(1L);
+
+        assertThat(result.getName()).isEqualTo("Keyboard");
+        verify(productRepository).findById(1L);
     }
 
     @Test
     void shouldThrowWhenProductNotFound() {
+        when(productRepository.findById(99L)).thenReturn(Optional.empty());
+
         assertThatThrownBy(() -> productService.getById(99L))
                 .isInstanceOf(ProductNotFoundException.class)
                 .hasMessage("Product not found: 99");
@@ -58,6 +72,8 @@ class ProductServiceTest {
     @Test
     void shouldCreateProductAndPublishEvent() {
         Product request = new Product(null, "Headphone", new BigDecimal("99.99"));
+        Product saved = new Product(4L, "Headphone", new BigDecimal("99.99"));
+        when(productRepository.save(any(Product.class))).thenReturn(saved);
 
         Product created = productService.create(request);
 
@@ -79,12 +95,17 @@ class ProductServiceTest {
 
     @Test
     void shouldUpdateProductAndPublishEvent() {
+        Product existing = new Product(2L, "Mouse", new BigDecimal("29.99"));
         Product request = new Product(null, "Gaming Mouse", new BigDecimal("49.99"));
+        Product updated = new Product(2L, "Gaming Mouse", new BigDecimal("49.99"));
 
-        Product updated = productService.update(2L, request);
+        when(productRepository.findById(2L)).thenReturn(Optional.of(existing));
+        when(productRepository.save(any(Product.class))).thenReturn(updated);
 
-        assertThat(updated.getName()).isEqualTo("Gaming Mouse");
-        assertThat(updated.getPrice()).isEqualTo(new BigDecimal("49.99"));
+        Product result = productService.update(2L, request);
+
+        assertThat(result.getName()).isEqualTo("Gaming Mouse");
+        assertThat(result.getPrice()).isEqualTo(new BigDecimal("49.99"));
 
         ArgumentCaptor<ProductEvent> captor = ArgumentCaptor.forClass(ProductEvent.class);
         verify(rabbitTemplate).convertAndSend(
@@ -101,6 +122,7 @@ class ProductServiceTest {
     @Test
     void shouldThrowWhenUpdatingNonExistingProduct() {
         Product request = new Product(null, "Headphone", new BigDecimal("99.99"));
+        when(productRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> productService.update(99L, request))
                 .isInstanceOf(ProductNotFoundException.class)
@@ -109,6 +131,9 @@ class ProductServiceTest {
 
     @Test
     void shouldDeleteProductAndPublishEvent() {
+        Product existing = new Product(1L, "Keyboard", new BigDecimal("59.99"));
+        when(productRepository.findById(1L)).thenReturn(Optional.of(existing));
+
         productService.delete(1L);
 
         ArgumentCaptor<ProductEvent> captor = ArgumentCaptor.forClass(ProductEvent.class);
@@ -125,6 +150,8 @@ class ProductServiceTest {
 
     @Test
     void shouldThrowWhenDeletingNonExistingProduct() {
+        when(productRepository.findById(99L)).thenReturn(Optional.empty());
+
         assertThatThrownBy(() -> productService.delete(99L))
                 .isInstanceOf(ProductNotFoundException.class)
                 .hasMessage("Product not found: 99");

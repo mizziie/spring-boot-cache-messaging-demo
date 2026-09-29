@@ -2,6 +2,7 @@ package com.example.redisdemo.controller;
 
 import com.example.redisdemo.model.Product;
 import com.example.redisdemo.service.ProductService;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -43,13 +44,13 @@ public class ProductController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Product create(@RequestBody Product product) {
+    public Product create(@Valid @RequestBody Product product) {
         log.info("POST /api/products: {}", product);
         return service.create(product);
     }
 
     @PutMapping("/{id}")
-    public Product update(@PathVariable Long id, @RequestBody Product product) {
+    public Product update(@PathVariable Long id, @Valid @RequestBody Product product) {
         log.info("PUT /api/products/{}: {}", id, product);
         return service.update(id, product);
     }
