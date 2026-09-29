@@ -61,7 +61,23 @@ mvn spring-boot:run
 mvn test
 ```
 
-### 1.4 ทดสอบผ่าน Swagger UI
+### 1.4 รัน Integration Tests (Testcontainers)
+
+Integration tests จะสร้าง PostgreSQL + Redis + RabbitMQ จริงใน Docker container แล้ว test API ทั้ง flow
+
+```bash
+mvn test -Dtest=ProductApiIntegrationTest
+```
+
+หรือรันทั้ง unit + integration tests:
+
+```bash
+mvn verify
+```
+
+> ต้องมี Docker เปิดอยู่
+
+### 1.5 ทดสอบผ่าน Swagger UI
 
 หลัง app start เปิดที่:
 
@@ -134,6 +150,7 @@ curl -X DELETE http://localhost:8080/api/products/1
 | Spring Data Redis | เชื่อมต่อ Redis |
 | Spring Cache | ทำ caching ด้วย annotation |
 | RabbitMQ 3 | Async messaging |
+| Testcontainers | Integration testing with real PostgreSQL/Redis/RabbitMQ |
 | SpringDoc OpenAPI | API documentation / Swagger UI |
 | Redis 7 (Docker) | Cache server |
 | Maven | Build tool |
