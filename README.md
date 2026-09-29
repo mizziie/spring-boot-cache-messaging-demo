@@ -756,7 +756,7 @@ Measure-Command { curl.exe http://localhost:8080/api/products/3 | Out-Null }
 ## 16. จุดที่ต้องจำสำหรับสอบ
 
 1. **Redis ทำหน้าที่อะไรในโปรเจคนี้?** → Cache store ลดการเรียก method ซ้ำ
-2. **ข้อมูลจริงเก็บที่ไหน?** → In-memory `ConcurrentHashMap`
+2. **ข้อมูลจริงเก็บที่ไหน?** → PostgreSQL ผ่าน JPA Repository
 3. **Spring Cache ใช้ annotation อะไรบ้าง?** → `@Cacheable`, `@CachePut`, `@CacheEvict`, `@Caching`
 4. **Cache key เป็นอย่างไร?** → ชื่อ cache + `::` + key เช่น `products::1`
 5. **ทำไมต้อง flush Redis เมื่อเปลี่ยน serializer?** → เพราะข้อมูลเก่า format ไม่ตรงกับ serializer ใหม่
@@ -992,21 +992,21 @@ curl -X DELETE http://localhost:8080/api/products/1
 
 ---
 
-## 19. Key Takeaways จากการทดลองจริง
+## 19. Key Takeaways
 
-### 18.1 Redis เป็น Cache ไม่ใช่ Database หลัก
+### 19.1 PostgreSQL เป็น Source of Truth
 
-- ข้อมูลจริงอยู่ใน **in-memory `ConcurrentHashMap`** ของ `ProductService`
-- Redis เก็บแค่สำเนาเพื่อให้ API ตอบเร็ว
-- ถ้า Redis หาย API ยังทำงานได้เพราะ fallback ไป in-memory db
+- ข้อมูลสินค้าจริงเก็บใน **PostgreSQL** ผ่าน JPA Repository
+- Redis เป็น **cache layer** เท่านั้น
+- ถ้า Redis หาย API ยังทำงานได้เพราะ fallback ไป query PostgreSQL ใหม่
 
-### 18.2 `flushall` แล้ว API ยังตอบได้
+### 19.2 `flushall` แล้ว API ยังตอบได้
 
-- เพราะ cache miss แล้วไปอ่านจาก in-memory db ใหม่
+- Redis ถูกล้าง cache ทิ้ง
 - ครั้งแรกหลัง `flushall` ช้ากว่าปกติ (cache miss)
 - ครั้งต่อไปเร็ว (cache hit)
 
-### 18.3 วัด Cache Hit/Miss
+### 19.3 วัด Cache Hit/Miss
 
 ใช้ `Measure-Command`:
 
@@ -1014,132 +1014,27 @@ curl -X DELETE http://localhost:8080/api/products/1
 Measure-Command { curl.exe http://localhost:8080/api/products | Out-Null }
 ```
 
-- ครั้งแรก: ~100-200 ms (cache miss)
-- ครั้งที่สอง: ~40-60 ms (cache hit)
+- ครั้งแรก: ~2 วินาที (cache miss + simulateSlowQuery)
+- ครั้งที่สอง: ~10-50 ms (cache hit)
 
-### 18.4 Redis Container Restart แล้วข้อมูลหาย
+### 19.4 Redis Container Restart
 
-- Redis เก็บใน memory ถ้าไม่เปิด persistence (AOF/RDB) ข้อมูลหายตอน restart
-- `docker ps` จะเห็น `CREATED: 8 hours ago` แต่ `STATUS: Up About a minute` = container ตัวเดิมแต่ restart ใหม่
-- ถ้าอยากคงข้อมูลใช้: `docker run -d --name redis -p 6379:6379 -v redis-data:/data redis:7-alpine redis-server --appendonly yes`
+- ข้อมูล cache ใน Redis อาจหายตอน restart
+- แต่ข้อมูลจริงยังอยู่ใน PostgreSQL
+- docker-compose เปิด AOF persistence ให้ Redis อยู่แล้ว
 
-### 18.5 Docker CLI เห็น Container แต่ Docker Desktop ไม่เห็น
+### 19.5 JSON ใน Redis มี `@class`
 
-- CLI คุยกับ Docker daemon โดยตรง realtime
-- Docker Desktop เป็น GUI ที่ sync จาก daemon ถ้า UI ค้าง/refresh ไม่ทันก็ไม่เห็น
-- แก้ด้วย restart Docker Desktop หรือใช้ CLI แทน
+- เพราะใช้ `GenericJackson2JsonRedisSerializer`
+- ใส่ type info เพื่อให้ deserialize กลับเป็น object ได้ถูกต้อง
+- ถ้าไม่มีอาจได้ `LinkedHashMap` หรือ `SerializationException`
 
-### 18.6 ทำไม JSON ใน Redis มี `java.util.ArrayList` และ `@class`
-
-- เพราะ **Jackson Default Typing** จาก `GenericJackson2JsonRedisSerializer`
-- JSON ไม่มี type system แต่ Java มี
-- ต้องใส่ type info เพื่อให้ deserialize กลับเป็น `ArrayList<Product>` ได้ถูกต้อง
-- ถ้าไม่มีอาจได้ `ArrayList<LinkedHashMap>` หรือ `SerializationException`
-
-### 18.7 จุดสำคัญก่อนสอบ
+### 19.6 จุดสำคัญก่อนสอบ
 
 1. อธิบาย Redis vs RabbitMQ
 2. อธิบาย flow `GET /api/products/{id}` ทั้ง cache hit/miss
 3. อธิบาย flow `POST/PUT/DELETE` พร้อม cache evict และ RabbitMQ event
-4. อธิบายว่าข้อมูลจริงอยู่ที่ไหน (in-memory db ไม่ใช่ Redis)
+4. อธิบายว่าข้อมูลจริงอยู่ที่ไหน (PostgreSQL ไม่ใช่ Redis)
 5. สาธิต cache hit/miss ด้วย `Measure-Command`
 6. สาธิต RabbitMQ event จาก logs
-7. อธิบาย Jackson Type Info ในข้อมูล Redis
-
----
-
-## 20. กรณีศึกษา: ระบบกดบัตร (Ticketing System)
-
-ส่วนนี้ขยายความว่าควรออกแบบระบบกดบัตรอย่างไร โดยใช้ Redis และ RabbitMQ ร่วมกัน
-
-### 19.1 ปัญหาของระบบกดบัตร
-
-- จำนวนจำกัดมาก
-- คนเข้าใช้พร้อมกันเยอะมาก
-- ต้องกัน double booking อย่างเด็ดขาด
-- ต้องตอบผลลูกค้าเร็ว
-
-### 19.2 ทำไมไม่ควรใช้ RabbitMQ ตรงจุดจองที่นั่ง?
-
-RabbitMQ ทำงานแบบ async มี delay เล็กน้อย ถ้าใช้ตรงจุดจองที่นั่ง อาจเกิด double booking ได้
-
-```text
-User กดจองที่นั่ง A1
-        ↓
-API ส่ง message → RabbitMQ
-        ↓
-Stock Service ค่อยมาตรวจสอบ A1 ว่างไหม
-```
-
-ระหว่างนั้นอาจมีคนอื่นจอง A1 ไปก่อน
-
-### 19.3 แนวทางที่แนะนำ
-
-| ส่วน | เทคโนโลยี | เหตุผล |
-|------|-----------|--------|
-| จองที่นั่งทันที | Redis Lock + Database | ต้องรู้ผลทันที กันซ้ำ |
-| ตรวจสอบที่นั่งเหลือ | Redis Cache | ลด load Database |
-| รอคิวเข้าระบบ | Queue / Waiting Room | ควบคุม traffic |
-| ส่ง email / QR code | RabbitMQ Async | งานรอง |
-| Analytics / Log | RabbitMQ / Kafka | งานรอง |
-
-### 19.4 Flow การจองที่นั่ง
-
-```text
-User กดเลือกที่นั่ง A1
-        ↓
-Redis: SET seat:A1:lock "user_123" NX EX 300
-        ↓
-ถ้าได้ lock → จองชั่วคราว 5 นาที
-        ↓
-DB: INSERT booking (seat=A1, status=PENDING, expires_at=now+5min)
-        ↓
-ตอบ user: "ที่นั่ง A1 ถูกจองแล้ว กรุณาชำระเงินใน 5 นาที"
-        ↓
-RabbitMQ: ส่ง event "booking.created"
-        ↓
-Email Service / QR Service / Analytics Service ทำงานต่อ
-```
-
-### 19.5 ทำไมต้อง Redis Lock?
-
-- เร็วมาก (~ms)
-- `SET NX EX` ได้แค่คนแรก
-- หมดอายุอัตโนมัติ กันจองแล้วไม่จ่าย
-- ลด load ที่ Database
-
-### 19.6 แนวทางอื่น
-
-#### Pessimistic Lock ที่ Database
-
-```sql
-SELECT * FROM seats WHERE id = 'A1' FOR UPDATE;
-UPDATE seats SET status = 'BOOKED', user_id = '123' WHERE id = 'A1';
-```
-
-- กันซ้ำแน่นอน แต่ DB อาจติด lock ถ้าคนเยอะ
-
-#### Optimistic Lock ที่ Database
-
-```sql
-UPDATE seats SET status = 'BOOKED', version = version + 1
-WHERE id = 'A1' AND version = 5;
-```
-
-- ไม่ติด lock แต่ถ้าคนเยอะต้อง retry บ่อย
-
-#### Queue-based (Waiting Room)
-
-- ควบคุม load ได้ดี แต่ user ต้องรอผล
-
-### 19.7 สรุป Best Practices
-
-1. อย่าใช้ RabbitMQ ตรงจุดจองที่นั่งหลัก
-2. ใช้ Redis Distributed Lock ก่อนจอง
-3. บันทึกลง Database แบบ sync
-4. ตั้ง TTL ให้ lock
-5. ใช้ RabbitMQ สำหรับงานรอง เช่น ส่ง email, QR code, analytics
-6. ใช้ Redis Cache แสดงที่นั่งเหลือ
-7. ใช้ Waiting Room / Queue ควบคุม traffic
-
-> แนวทางนี้เรียกว่า "Redis จัดการ concurrency + Database รับประกันความถูกต้อง + RabbitMQ ทำงานรอง"
+7. อธิบาย `@Transactional` กับ cache + messaging
