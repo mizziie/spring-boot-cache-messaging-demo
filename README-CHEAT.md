@@ -1,6 +1,6 @@
 # Cheat Sheet: Redis + RabbitMQ + WebSocket + Ticketing System
 
-ไฟล์นี้สรุปเนื้อหาที่ใช้ทบทวนก่อนสอบ/สัมภาษณ์ ครอบคลุม Redis, RabbitMQ, WebSocket และระบบกดบัตร
+ไฟล์นี้สรุป cheat sheet สำหรับทบทวน Redis, RabbitMQ, WebSocket และตัวอย่างระบบกดบัตร
 
 ---
 
@@ -13,7 +13,7 @@
 5. [WebSocket Integration](#5-websocket-integration)
 6. [Ticketing System Deep Dive](#6-ticketing-system-deep-dive)
 7. [Useful Commands](#7-useful-commands)
-8. [Interview Q&A](#8-interview-qa)
+8. [Q&A](#8-qa)
 9. [Anti-Patterns](#9-anti-patterns)
 10. [Production Checklist](#10-production-checklist)
 
@@ -376,7 +376,7 @@ curl.exe -X POST http://localhost:8080/api/products `
 
 ---
 
-## 8. Interview Q&A
+## 8. Q&A
 
 ### Redis
 

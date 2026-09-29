@@ -696,81 +696,7 @@ public List<Product> getAll() {
 
 **แก้ไข:** ล้าง Redis ด้วย `FLUSHALL` แล้ว restart Spring Boot ใหม่
 
----
-
-## 15. วิธีรันและทดสอบ
-
-### 14.1 รัน Redis ด้วย Docker
-
-```bash
-docker run --name redis -p 6379:6379 -d redis:7-alpine
-```
-
-### 14.2 รัน Spring Boot
-
-```bash
-mvn spring-boot:run
-```
-
-### 14.3 ทดสอบ API
-
-```bash
-# ดูสินค้าทั้งหมด
-curl http://localhost:8080/api/products
-
-# ดูสินค้า id 1
-curl http://localhost:8080/api/products/1
-
-# สร้างสินค้าใหม่
-curl -X POST http://localhost:8080/api/products \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Laptop","price":999.99}'
-
-# อัปเดตสินค้า
-curl -X PUT http://localhost:8080/api/products/1 \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Mechanical Keyboard","price":89.99}'
-
-# ลบสินค้า
-curl -X DELETE http://localhost:8080/api/products/1
-```
-
-### 14.4 ตรวจสอบ Redis
-
-```bash
-# เข้า redis-cli ผ่าน Docker
-docker exec -it redis redis-cli
-
-# หรือถ้าติดตั้ง redis-cli ในเครื่อง
-redis-cli
-
-# ดู keys ทั้งหมด
-KEYS *
-
-# ดูค่า
-GET products::1
-GET productList::all
-
-# ดู TTL
-TTL products::1
-
-# ดู real-time traffic
-MONITOR
-```
-
-### 14.5 วัดเวลา cache hit/miss (PowerShell)
-
-```powershell
-# ครั้งแรกน่าจะช้า ~2 วินาที (cache miss)
-Measure-Command { curl.exe http://localhost:8080/api/products/3 | Out-Null }
-
-# ครั้งที่สองน่าจะเร็ว ~50-100 ms (cache hit)
-Measure-Command { curl.exe http://localhost:8080/api/products/3 | Out-Null }
-```
-
----
-
-## 16. จุดที่ต้องจำสำหรับสอบ
+## 15. หลักการสำคัญที่ควรรู้
 
 1. **Redis ทำหน้าที่อะไรในโปรเจคนี้?** → Cache store ลดการเรียก method ซ้ำ
 2. **ข้อมูลจริงเก็บที่ไหน?** → PostgreSQL ผ่าน JPA Repository
@@ -790,7 +716,7 @@ Measure-Command { curl.exe http://localhost:8080/api/products/3 | Out-Null }
 
 ---
 
-## 17. RabbitMQ Integration
+## 16. RabbitMQ Integration
 
 นอกจาก Redis Cache แล้ว โปรเจคนี้ยังเชื่อมต่อ **RabbitMQ** เพื่อส่ง **async event** เมื่อมีการเปลี่ยนแปลงข้อมูลสินค้า (create/update/delete)
 
@@ -992,38 +918,22 @@ curl -X PUT http://localhost:8080/api/products/1 \
 curl -X DELETE http://localhost:8080/api/products/1
 ```
 
----
 
-## 18. จุดที่ต้องจำสำหรับสอบ (เพิ่มเติมจาก RabbitMQ)
+## 17. Key Takeaways
 
-16. **RabbitMQ ต่างจาก Redis ยังไง?** → Redis เป็น cache/data store, RabbitMQ เป็น message broker
-17. **ทำไมต้องใช้ Redis + RabbitMQ คู่กัน?** → Redis เร็ว response, RabbitMQ แยกงาน async ให้ service อื่น
-18. **RabbitMQ สำคัญกับ microservices ยังไง?** → Decouple services, async processing, load balancing
-19. **Exchange คืออะไร?** → ตัวรับ message จาก producer แล้วส่งต่อไป queue ตาม routing key
-20. **Queue คืออะไร?** → ที่เก็บ message รอ consumer มารับ
-21. **Binding คืออะไร?** → ความสัมพันธ์ระหว่าง exchange กับ queue โดยใช้ routing key
-22. **Publisher คือใคร?** → ตัวที่ส่ง message เข้า RabbitMQ
-23. **Consumer คือใคร?** → ตัวที่รับ message จาก RabbitMQ มาประมวลผล
-24. **ACK คืออะไร?** → Consumer ยืนยันว่ารับและประมวลผล message สำเร็จแล้ว
-25. **Dead Letter Queue คืออะไร?** → ที่เก็บ message ที่ประมวลผลไม่สำเร็จ เพื่อ retry หรือ debug ภายหลัง
-
----
-
-## 19. Key Takeaways
-
-### 19.1 PostgreSQL เป็น Source of Truth
+### 17.1 PostgreSQL เป็น Source of Truth
 
 - ข้อมูลสินค้าจริงเก็บใน **PostgreSQL** ผ่าน JPA Repository
 - Redis เป็น **cache layer** เท่านั้น
 - ถ้า Redis หาย API ยังทำงานได้เพราะ fallback ไป query PostgreSQL ใหม่
 
-### 19.2 `flushall` แล้ว API ยังตอบได้
+### 17.2 `flushall` แล้ว API ยังตอบได้
 
 - Redis ถูกล้าง cache ทิ้ง
 - ครั้งแรกหลัง `flushall` ช้ากว่าปกติ (cache miss)
 - ครั้งต่อไปเร็ว (cache hit)
 
-### 19.3 วัด Cache Hit/Miss
+### 17.3 วัด Cache Hit/Miss
 
 ใช้ `Measure-Command`:
 
@@ -1034,19 +944,19 @@ Measure-Command { curl.exe http://localhost:8080/api/products | Out-Null }
 - ครั้งแรก: ~2 วินาที (cache miss + simulateSlowQuery)
 - ครั้งที่สอง: ~10-50 ms (cache hit)
 
-### 19.4 Redis Container Restart
+### 17.4 Redis Container Restart
 
 - ข้อมูล cache ใน Redis อาจหายตอน restart
 - แต่ข้อมูลจริงยังอยู่ใน PostgreSQL
 - docker-compose เปิด AOF persistence ให้ Redis อยู่แล้ว
 
-### 19.5 JSON ใน Redis มี `@class`
+### 17.5 JSON ใน Redis มี `@class`
 
 - เพราะใช้ `GenericJackson2JsonRedisSerializer`
 - ใส่ type info เพื่อให้ deserialize กลับเป็น object ได้ถูกต้อง
 - ถ้าไม่มีอาจได้ `LinkedHashMap` หรือ `SerializationException`
 
-### 19.6 จุดสำคัญก่อนสอบ
+### 18.6 จุดสำคัญที่ควรเข้าใจ
 
 1. อธิบาย Redis vs RabbitMQ
 2. อธิบาย flow `GET /api/products/{id}` ทั้ง cache hit/miss
